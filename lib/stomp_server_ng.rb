@@ -134,7 +134,7 @@ module StompServer
     # Should this be 'read' only after construction ????
     attr_accessor :opts
 
-    def initialize
+    def initialize(options = {})
 
       @opts = nil
       @defaults = {
@@ -166,7 +166,7 @@ module StompServer
       StompServer::LogHelper.showversion(@@log)
 
       # Options handling
-      @opts = getopts()   # get and merge the options
+      @opts = getopts(options)   # get and merge the options
 
       # Finalize logger level handling
       @@log.debug "Logger Level Requested: #{@opts[:log_level].upcase}"
@@ -187,8 +187,62 @@ module StompServer
       @@log.debug("#{self.class} Configuration complete")
     end
 
-    def getopts()
+    def getopts(options)
+      hopts = options[:skip_args] ? {} : opts_from_args
 
+      # Handle the config file
+      config_found = false
+      # Load a default config file first if it exists.
+      loaded_opts = {}
+      full_path_default = File.expand_path(@defaults[:config])
+      if File.exists?(full_path_default)
+        @@log.debug("Loading config file defaults from: #{full_path_default}")
+        loaded_opts.merge!(YAML.load_file(full_path_default))
+        @defaults[:config] = full_path_default
+        config_found = true
+      end
+      # If a command line specified config file exists, overlay any new
+      # parameters in that file.
+      if hopts[:config]
+        full_path_cl = File.expand_path(hopts[:config])
+        if File.exists?(full_path_cl)
+          @@log.debug("Loading config file overrides from: #{full_path_cl}")
+          loaded_opts.merge!(YAML.load_file(full_path_cl))
+          hopts[:config] = full_path_cl
+          config_found = true
+        end
+      end
+      @@log.warn("No configuration file found.") unless config_found
+
+      # Run basic required merges on all the options
+      opts = {}                         # set to empty
+      opts = opts.merge(@defaults)      # 01 = merge in defaults
+      opts = opts.merge(loaded_opts)    # 02 = merge in loaded from config file
+      opts = opts.merge(hopts)          # 03 = merge in command line options
+
+      # Last but not least: Miscellaneous file definitions
+      opts[:etcdir] = File.join(opts[:working_dir],'etc')           # Define ':etcdir'
+      opts[:storage] = File.join(opts[:working_dir],opts[:storage]) # Override! ':storage'
+      opts[:logdir] = File.join(opts[:working_dir],opts[:logdir])   # Override! ':logdir'
+      opts[:logfile] = File.join(opts[:logdir],opts[:logfile])      # Override! ':logfile'
+      opts[:pidfile] = File.join(opts[:logdir],opts[:pidfile])      # Override! ':pidfile'
+      # :dbyml will be a full path and file name
+      unless File.exists?(File.expand_path(opts[:dbyml]))
+        opts[:dbyml] = File.join(opts[:etcdir],opts[:dbyml])        # Override! ':dbyml'
+      else
+        opts[:dbyml] = File.expand_path(opts[:dbyml])
+      end
+
+      # Authorization - working file
+      if opts[:auth]
+        opts[:passwd] = File.join(opts[:etcdir],'.passwd')
+      end
+
+      # Return merged values (in Hash)
+      return opts
+    end
+
+    def opts_from_args
       # New Options Parser
       opts_parser = OptionParser.new
 
@@ -282,57 +336,7 @@ module StompServer
       end
 
       opts_parser.parse(ARGV)
-
-      # Handle the config file
-      config_found = false
-      # Load a default config file first if it exists.
-      loaded_opts = {}
-      full_path_default = File.expand_path(@defaults[:config])
-      if File.exists?(full_path_default)
-        @@log.debug("Loading config file defaults from: #{full_path_default}")
-        loaded_opts.merge!(YAML.load_file(full_path_default))
-        @defaults[:config] = full_path_default
-        config_found = true
-      end
-      # If a command line specified config file exists, overlay any new
-      # parameters in that file.
-      if hopts[:config]
-        full_path_cl = File.expand_path(hopts[:config])
-        if File.exists?(full_path_cl)
-          @@log.debug("Loading config file overrides from: #{full_path_cl}")
-          loaded_opts.merge!(YAML.load_file(full_path_cl))
-          hopts[:config] = full_path_cl
-          config_found = true
-        end
-      end
-      @@log.warn("No configuration file found.") unless config_found
-
-      # Run basic required merges on all the options
-      opts = {}                         # set to empty
-      opts = opts.merge(@defaults)      # 01 = merge in defaults
-      opts = opts.merge(loaded_opts)    # 02 = merge in loaded from config file
-      opts = opts.merge(hopts)          # 03 = merge in command line options
-
-      # Last but not least: Miscellaneous file definitions
-      opts[:etcdir] = File.join(opts[:working_dir],'etc')           # Define ':etcdir'
-      opts[:storage] = File.join(opts[:working_dir],opts[:storage]) # Override! ':storage'
-      opts[:logdir] = File.join(opts[:working_dir],opts[:logdir])   # Override! ':logdir'
-      opts[:logfile] = File.join(opts[:logdir],opts[:logfile])      # Override! ':logfile'
-      opts[:pidfile] = File.join(opts[:logdir],opts[:pidfile])      # Override! ':pidfile'
-      # :dbyml will be a full path and file name
-      unless File.exists?(File.expand_path(opts[:dbyml]))
-        opts[:dbyml] = File.join(opts[:etcdir],opts[:dbyml])        # Override! ':dbyml'
-      else
-        opts[:dbyml] = File.expand_path(opts[:dbyml])
-      end
-
-      # Authorization - working file
-      if opts[:auth]
-        opts[:passwd] = File.join(opts[:etcdir],'.passwd')
-      end
-      
-      # Return merged values (in Hash)
-      return opts
+      return hopts
     end
   end
 
