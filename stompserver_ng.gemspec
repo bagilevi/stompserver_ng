@@ -1,4 +1,3 @@
-(in /ad3/gma/home_ext/misc.code/stompserver_ng)
 # -*- encoding: utf-8 -*-
 
 Gem::Specification.new do |s|
